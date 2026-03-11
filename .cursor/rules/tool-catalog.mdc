@@ -1,0 +1,72 @@
+---
+description: Catalog of all RE tools -- pick the right tool for the job
+alwaysApply: true
+---
+
+# Tool Catalog
+
+All tools work on PE binaries. `$B` = path to binary, `$VA` = hex address. Check tools help command for more info on usage.
+Always consult this catalog before making any move to take the best decision on what to use with best bang for your buck.
+
+IMPORTANT: Collecting MORE INFORMATION per command run is encouraged over minor snippets of data/output that don't reveal the whole picture.
+
+## Static Analysis (`retools/`) -- offline, on-disk PE files
+
+| Tool | Purpose | Example |
+|------|---------|---------|
+| `disasm.py $B $VA` | Disassemble N instructions at VA | `disasm.py binary.exe 0x401000 -n 50` |
+| `decompiler.py $B $VA` | **Ghidra-quality C decompilation** (r2ghidra, auto-configured) | `python -m retools.decompiler binary.exe 0x401000` |
+| `funcinfo.py $B $VA` | Find function start/end, rets, calling convention, callees | `funcinfo.py binary.exe 0x401000` |
+| `cfg.py $B $VA` | Control flow graph (basic blocks + edges, text or mermaid) | `cfg.py binary.exe 0x401000 --format mermaid` |
+| `callgraph.py $B $VA` | Caller/callee tree (multi-level, --up/--down N) | `callgraph.py binary.exe 0x401000 --up 3` |
+| `xrefs.py $B $VA` | Find all calls/jumps TO an address | `xrefs.py binary.exe 0x401000 -t call` |
+| `datarefs.py $B $VA` | Find all instructions that read/write a global address | `datarefs.py binary.exe 0x7A0000 --access w` |
+| `structrefs.py $B $OFF` | Find all `[reg+offset]` accesses (struct field usage) | `structrefs.py binary.exe 0x54 --base esi` |
+| `vtable.py $B dump $VA` | Dump C++ vtable slots with instruction preview | `vtable.py binary.exe dump 0x6A0000` |
+| `vtable.py $B calls $OFF` | Find all indirect `call [reg+offset]` (vtable call sites) | `vtable.py binary.exe calls 0xB0` |
+| `search.py $B strings` | Extract strings with keyword filter | `search.py binary.exe strings -f render,draw` |
+| `search.py $B pattern` | Find exact byte pattern | `search.py binary.exe pattern "D9 56 54 D8 1D"` |
+| `search.py $B imports` | List PE imports, filter by DLL | `search.py binary.exe imports -d kernel32` |
+| `readmem.py $B $VA $TYPE` | Read typed data (float, uint32, ptr, bytes...) | `readmem.py binary.exe 0x401000 float` |
+| `asi_patcher.py build` | Generate .asi DLL patch from JSON spec | `asi_patcher.py build spec.json --vcvarsall ...` |
+
+## Dynamic Analysis (`livetools/`) -- Frida-based, attaches to running process
+
+```
+python -m livetools attach <process>    # start session
+python -m livetools detach              # end session
+python -m livetools status              # check connection
+```
+
+| Command | Purpose |
+|---------|---------|
+| `trace $VA` | Non-blocking: log N hits with register/memory reads |
+| `steptrace $VA` | Instruction-level trace (Stalker) with call depth control |
+| `collect $VA [$VA2...]` | Multi-address hit counting over duration |
+| `bp add/del/list $VA` | Breakpoints (stops target) |
+| `watch` | Wait for breakpoint hit |
+| `regs` / `stack` / `bt` | Inspect registers, stack, backtrace at break |
+| `mem read $VA $SIZE` | Read live process memory (supports --as float32) |
+| `mem write $VA $HEX` | Write live process memory |
+| `disasm [$VA]` | Disassemble from live process |
+| `scan $PATTERN` | Search process memory for byte pattern |
+| `modules` | List loaded modules with base addresses |
+| `dipcnt on/off/read` | D3D9 DrawIndexedPrimitive call counter |
+| `dipcnt callers [N]` | Sample N DIP calls and histogram return addresses |
+| `memwatch start/stop/read` | Memory write watchpoint with backtrace |
+| `analyze $FILE` | Offline analysis of collected .jsonl trace data |
+
+**NOTE**: Some processes require their window to be focused for traces to capture data.
+
+## Decision Guide
+
+- "What does this function do?" → `decompiler.py` (best), then `disasm.py` + `cfg.py`
+- "Who calls this function?" → `xrefs.py` (flat) or `callgraph.py --up` (tree)
+- "What does this function call?" → `funcinfo.py` (list) or `callgraph.py --down` (tree)
+- "Where is this global read/written?" → `datarefs.py`
+- "Where is struct field +0x54 used?" → `structrefs.py`
+- "Find a known byte sequence" → `search.py pattern`
+- "Is this function reached at runtime?" → `livetools trace` or `collect`
+- "What are the actual register values?" → `livetools trace --read` or `bp` + `regs`
+- "How many draw calls happen?" → `livetools dipcnt`
+- "Who writes to this memory address?" → `livetools memwatch`
