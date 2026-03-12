@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import bisect
 import struct
 from dataclasses import dataclass
 from pathlib import Path
@@ -96,6 +97,43 @@ class Binary:
             if s.Characteristics & 0x20000000
         ]
 
+    # ── Function entry-point table ────────────────────────────────────
+
+    @property
+    def func_table(self) -> list[int]:
+        """Sorted list of known function entry points (lazily built).
+
+        Collects targets of direct CALL/JMP rel32 instructions across
+        all executable sections, plus PE export addresses.  Used by
+        ``find_func_start`` for O(log n) function-start lookups.
+        """
+        if hasattr(self, "_func_table"):
+            return self._func_table
+        targets: set[int] = set()
+        for va_start, raw_off, raw_size in self.exec_ranges():
+            data = self.raw[raw_off : raw_off + raw_size]
+            for i in range(len(data) - 4):
+                if data[i] in (0xE8, 0xE9):
+                    rel = int.from_bytes(data[i + 1 : i + 5], "little", signed=True)
+                    dest = va_start + i + 5 + rel
+                    if self.in_exec(dest):
+                        targets.add(dest)
+        if hasattr(self.pe, "DIRECTORY_ENTRY_EXPORT"):
+            for exp in self.pe.DIRECTORY_ENTRY_EXPORT.symbols:
+                if exp.address:
+                    targets.add(self.base + exp.address)
+        self._func_table = sorted(targets)
+        return self._func_table
+
+    def find_func_start(self, va: int) -> int | None:
+        """Find the function entry point containing *va*.
+
+        Uses ``func_table`` with binary search.  Returns None if *va*
+        precedes all known entry points.
+        """
+        idx = bisect.bisect_right(self.func_table, va) - 1
+        return self.func_table[idx] if idx >= 0 else None
+
     # ── Instruction analysis ─────────────────────────────────────────
 
     @staticmethod
@@ -166,8 +204,7 @@ class Binary:
             ))
         return results
 
-    @staticmethod
-    def abs_mem_refs(insn) -> list[int]:
+    def abs_mem_refs(self, insn) -> list[int]:
         """Absolute memory addresses referenced by this instruction.
 
         Extracts addresses from operands like ``[0x7A0000]`` (no base/index
@@ -175,10 +212,46 @@ class Binary:
         """
         if not hasattr(insn, "operands"):
             return []
+        mask = 0xFFFFFFFFFFFFFFFF if self.is_64 else 0xFFFFFFFF
         refs = []
         for op in insn.operands:
             if op.type != x86.X86_OP_MEM:
                 continue
             if op.mem.base == 0 and op.mem.index == 0 and op.mem.disp != 0:
-                refs.append(op.mem.disp & 0xFFFFFFFF)
+                refs.append(op.mem.disp & mask)
+        return refs
+
+    def rip_rel_refs(self, insn) -> list[int]:
+        """Resolved RIP-relative addresses (64-bit only).
+
+        For instructions like ``lea rax, [rip + 0x1234]``, resolves to
+        the absolute target: ``insn.address + insn.size + disp``.
+        """
+        if not self.is_64 or not hasattr(insn, "operands"):
+            return []
+        refs = []
+        for op in insn.operands:
+            if op.type != x86.X86_OP_MEM:
+                continue
+            if op.mem.base == x86.X86_REG_RIP and op.mem.index == 0:
+                refs.append(insn.address + insn.size + op.mem.disp)
+        return refs
+
+    def abs_imm_refs(self, insn) -> list[int]:
+        """Immediate operand values that look like virtual addresses.
+
+        Extracts values from ``push 0x7C540C``, ``mov ecx, 0x7C540C``,
+        etc.  Skips small constants (< 0x10000) that are unlikely to be
+        addresses.
+        """
+        if not hasattr(insn, "operands"):
+            return []
+        mask = 0xFFFFFFFFFFFFFFFF if self.is_64 else 0xFFFFFFFF
+        refs = []
+        for op in insn.operands:
+            if op.type != x86.X86_OP_IMM:
+                continue
+            val = op.imm & mask
+            if val > 0x10000:
+                refs.append(val)
         return refs

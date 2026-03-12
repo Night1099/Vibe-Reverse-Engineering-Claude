@@ -4,18 +4,33 @@
 Produces pseudo-C output for the function at the given virtual address.
 Uses r2ghidra (pdg) when available, falling back to r2's built-in pdc.
 
+Supports loading type/function/global metadata via ``--types`` to produce
+richer decompiled output (named structs, function names, enum values).
+
 Prerequisites:
     pip install r2pipe
     radare2 portable in  tools/radare2-*/bin  (auto-detected)
 
 Usage:
     python -m retools.decompiler <binary> <va>
+    python -m retools.decompiler <binary> <va> --types kb.h
     python -m retools.decompiler <binary> <va> --backend pdc
-    python -m retools.decompiler <binary> <va> --full-analysis
+
+Knowledge base format (``--types`` input):
+    // C type definitions (struct, enum, typedef) -- no prefix
+    struct Foo { int x; float y; };
+    enum Mode { MODE_A=0, MODE_B=1 };
+
+    // Function signatures at addresses -- @ prefix
+    @ 0x401000 void __cdecl ProcessInput(int key);
+
+    // Global variables at addresses -- $ prefix
+    $ 0x7C5548 Foo* g_mainObject
 
 Examples:
     python -m retools.decompiler binary.exe 0x401000
-    python -m retools.decompiler binary.exe 0x401000 --backend pdc
+    python -m retools.decompiler binary.exe 0x401000 --types project/kb.h
+    python -m retools.decompiler binary.exe 0x401000 --types "struct V { float x; float y; float z; };"
 """
 
 import argparse
@@ -49,7 +64,6 @@ def _find_r2_bin() -> str | None:
             candidate = child / "bin" / "radare2"
             if candidate.is_file():
                 return str(candidate)
-    # Fall back to PATH
     import shutil
     return shutil.which("radare2") or shutil.which("r2")
 
@@ -59,11 +73,9 @@ def _find_sleigh_home() -> str | None:
     tools_dir = _PROJECT / "tools"
     if tools_dir.is_dir():
         for child in sorted(tools_dir.iterdir(), reverse=True):
-            # Bundled alongside the radare2 install
             candidate = child / "share" / "r2ghidra_sleigh"
             if candidate.is_dir() and any(candidate.glob("*.ldefs")):
                 return str(candidate)
-    # Fallback: standard r2ghidra install location
     xdg = Path.home() / ".local" / "share" / "radare2" / "plugins" / "r2ghidra_sleigh"
     if xdg.is_dir() and any(xdg.glob("*.ldefs")):
         return str(xdg)
@@ -77,9 +89,51 @@ def _ensure_r2_in_path(r2_bin: str) -> None:
         os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
 
 
+def _load_types(r2, types_arg: str) -> None:
+    """Parse a knowledge-base string and send type/function/global commands to r2."""
+    if types_arg == "-":
+        text = sys.stdin.read()
+    elif os.path.isfile(types_arg):
+        text = Path(types_arg).read_text(encoding="utf-8")
+    else:
+        text = types_arg
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("//"):
+            continue
+
+        if line.startswith("@ "):
+            rest = line[2:]
+            addr_str, sig = rest.split(None, 1)
+            addr = int(addr_str, 16)
+            name = sig.rstrip(";").split("(")[0].split()[-1]
+            r2.cmd(f"af @ {addr:#x}")
+            r2.cmd(f"afn {name} @ {addr:#x}")
+            r2.cmd(f"afs {sig.rstrip(';')} @ {addr:#x}")
+        elif line.startswith("$ "):
+            parts = line[2:].split()
+            addr = int(parts[0], 16)
+            name = parts[-1]
+            r2.cmd(f"f {name} @ {addr:#x}")
+            if len(parts) > 2:
+                type_name = " ".join(parts[1:-1])
+                r2.cmd(f"tl {type_name} @ {addr:#x}")
+        else:
+            r2.cmd(f"td {line}")
+
+
 def decompile(binary: str, va: int, *, backend: str = "auto",
-              full_analysis: bool = False) -> str:
-    """Decompile the function at *va* and return pseudo-C as a string."""
+              full_analysis: bool = False, types: str | None = None) -> str:
+    """Decompile the function at *va* and return pseudo-C as a string.
+
+    Args:
+        binary: Path to PE file.
+        va: Virtual address of the function.
+        backend: Decompiler backend ("auto", "pdg", "pdc", "pdd").
+        full_analysis: If True, run ``aaa`` before decompiling.
+        types: Knowledge-base string, stdin marker (``-``), or file path.
+    """
     r2_bin = _find_r2_bin()
     if r2_bin is None:
         raise FileNotFoundError(
@@ -96,12 +150,14 @@ def decompile(binary: str, va: int, *, backend: str = "auto",
         if sleigh:
             r2.cmd(f"e r2ghidra.sleighhome={sleigh}")
 
+        if types:
+            _load_types(r2, types)
+
         if full_analysis:
             r2.cmd("aaa")
         else:
             r2.cmd(f"af @ {va:#x}")
 
-        # Pick backend
         if backend == "auto":
             for try_be in ("pdg", "pdc"):
                 out = r2.cmd(f"{_BACKEND_CMDS[try_be]} @ {va:#x}").strip()
@@ -136,9 +192,15 @@ def main() -> None:
         action="store_true",
         help="Run full r2 analysis (aaa) before decompiling – slower but better names",
     )
+    p.add_argument(
+        "-t", "--types",
+        help="Knowledge base: inline types string, '-' for stdin, "
+             "or path to .h file with structs/functions/globals",
+    )
     args = p.parse_args()
     print(decompile(args.binary, int(args.va, 16),
-                    backend=args.backend, full_analysis=args.full_analysis))
+                    backend=args.backend, full_analysis=args.full_analysis,
+                    types=args.types))
 
 
 if __name__ == "__main__":

@@ -25,42 +25,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import Binary
 
-_PROLOGUES = [b"\x55\x8B\xEC", b"\x55\x89\xE5"]
-_PADDING = {0x90, 0xCC}
+def find_start(b: Binary, va: int, **_kw) -> int | None:
+    """Find the function entry point containing *va*.
 
-
-def find_start(b: Binary, va: int, max_search: int = 0x2000) -> int | None:
-    """Walk backwards from *va* to find the function entry point.
-
-    Recognises standard prologues (push ebp; mov ebp,esp) and
-    sub esp preceded by padding.  Also detects inter-function padding
-    runs (>= 2 NOP/INT3 bytes) as hard boundaries -- the function
-    must start immediately after such a run.
+    Delegates to ``Binary.find_func_start`` which uses a sorted table
+    of CALL/JMP targets and PE exports with binary-search lookup.
+    Works for both x86 and x64 binaries without prologue heuristics.
     """
-    padding_run = 0
-    for off in range(0, max_search):
-        addr = va - off
-        cur = b.read_va(addr, 1)
-        if not cur:
-            continue
-
-        if cur[0] in _PADDING:
-            padding_run += 1
-            continue
-
-        if padding_run >= 2:
-            return addr + padding_run + 1
-
-        padding_run = 0
-
-        head = b.read_va(addr, 3)
-        if head in _PROLOGUES:
-            return addr
-        if len(head) >= 2 and head[0] in (0x83, 0x81) and head[1] == 0xEC:
-            prev = b.read_va(addr - 1, 1)
-            if prev and prev[0] in _PADDING:
-                return addr
-    return None
+    return b.find_func_start(va)
 
 
 def analyze(b: Binary, start: int, max_size: int):
@@ -107,8 +79,9 @@ def main():
     va = int(args.va, 16)
     start = find_start(b, va) or va
     rets, calls, end_va = analyze(b, start, args.max_size)
+    w = 16 if b.is_64 else 8
 
-    print(f"Function: 0x{start:08X} .. 0x{end_va:08X}  ({end_va - start} bytes)\n")
+    print(f"Function: 0x{start:0{w}X} .. 0x{end_va:0{w}X}  ({end_va - start} bytes)\n")
 
     print(f"Returns ({len(rets)}):")
     for addr, cleanup in rets:
@@ -116,7 +89,7 @@ def main():
             desc = f"stdcall/thiscall  {cleanup} bytes = {cleanup // 4} stack args"
         else:
             desc = "cdecl/thiscall  0 stack args"
-        print(f"  0x{addr:08X}: ret {f'0x{cleanup:X}':6s}  {desc}")
+        print(f"  0x{addr:0{w}X}: ret {f'0x{cleanup:X}':6s}  {desc}")
 
     print(f"\nCallees ({len(set(t for _, t in calls))}):")
     seen: set = set()
@@ -125,7 +98,7 @@ def main():
             continue
         seen.add(target)
         n = sum(1 for _, t in calls if t == target)
-        label = target if isinstance(target, str) else f"0x{target:08X}"
+        label = target if isinstance(target, str) else f"0x{target:0{w}X}"
         print(f"  {label}{f'  ({n}x)' if n > 1 else ''}")
 
 
