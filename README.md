@@ -1,12 +1,12 @@
 # Vibe Reverse Engineering
 
-LLM-friendly static and dynamic analysis tools for **x86/x64 PE binaries**, designed for Cursor IDE. Point an agent at an `.exe`, describe what you want, and let it work.
+LLM-friendly static and dynamic analysis tools for **x86/x64 PE binaries**, designed for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Point an agent at an `.exe`, describe what you want, and let it work.
 
 No reverse engineering experience required -- just good prompting. Although some basic knowledge of programming and RE can go a long way.
 
 ## Requirements
 
-- [Cursor IDE](https://cursor.sh)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
 - Python 3.10+
 - Visual Studio 2022+ with C++ Desktop workload (only needed to build ASI patches)
 
@@ -22,7 +22,7 @@ pip install -r requirements.txt
 
 ## How it works
 
-The project ships with Cursor rules (`.cursor/rules/`) that teach the agent a full tool catalog -- which tool to reach for, when, and why. The agent picks the right tool automatically based on your question.
+The project ships with a `CLAUDE.md` file that teaches the agent a full tool catalog -- which tool to reach for, when, and why. Claude Code automatically reads `CLAUDE.md` at the start of every conversation, so the agent picks the right tool based on your question with no extra setup.
 
 **Static analysis** (`retools/`) works directly on PE files on disk: disassembly, decompilation, cross-references, call graphs, vtable analysis, byte pattern search, and more.
 
@@ -30,7 +30,7 @@ The project ships with Cursor rules (`.cursor/rules/`) that teach the agent a fu
 
 ## Usage
 
-Start a new chat in Cursor, point it at the target binary, and describe what you're after:
+Open a terminal in this directory and run `claude`, then describe what you're after:
 
 > Disable frustum culling in "D:/Games/MyGame/AwesomeGame.exe" -- I'm modding raytracing and need geometry to render behind the camera for reflections/mirrors.
 
