@@ -212,3 +212,27 @@ $ 0x7C554C Flags g_renderFlags
 
 **Always pass `--types <kb_file>` when using `decompiler.py`** so accumulated knowledge improves every decompilation.
 
+## Context-Mode Integration
+
+All `retools` and `livetools` commands produce large output that burns context window. **Route them through context-mode sandbox tools instead of raw Bash.**
+
+### Execution Routing
+
+| Scenario | Use |
+|----------|-----|
+| Single RE tool command | `ctx_execute(language: "shell", code: "cd D:/GIT/Vibe-Reverse-Engineering && python -m retools.<tool> ...")` |
+| Multiple RE commands + recall prior findings | `ctx_batch_execute(commands: [...], queries: [...])` |
+| Analyzing a trace JSONL or large file | `ctx_execute_file(path, language: "python", code: "...")` |
+
+After sandbox execution, summarize: what the function/data does, key addresses found, and KB updates needed.
+
+### Indexing Discoveries
+
+When you identify a function, reconstruct a struct, build a patch, or map a vtable, **index it** via `ctx_index` with title format `project_name/topic` (e.g., `mb_warband/frustum_culling`). This makes findings searchable across sessions.
+
+### Session Workflow
+
+1. **Start**: `ctx_search` for prior findings on the project + read `kb.h`
+2. **Work**: Run RE tools via `ctx_execute`, index discoveries via `ctx_index`, update `kb.h`
+3. **End**: Index a session summary with what was discovered and what questions remain
+

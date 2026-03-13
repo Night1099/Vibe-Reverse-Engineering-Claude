@@ -28,6 +28,17 @@ The project ships with a `CLAUDE.md` file that teaches the agent a full tool cat
 
 **Dynamic analysis** (`livetools/`) attaches to a running process via Frida: breakpoints, register/memory inspection, function tracing, instruction-level stepping, and live memory patching.
 
+### Plugins (optional)
+
+Install the [context-mode](https://github.com/mksglu/context-mode) plugin to save context window when running RE tools. Large outputs (decompiled C, disassembly, string tables, trace data) are processed in a sandbox -- only your summary enters context. Discoveries are indexed per game project and searchable across sessions.
+
+```bash
+claude /plugin marketplace add mksglu/context-mode
+claude /plugin install context-mode@context-mode
+```
+
+Restart Claude Code after installing. The plugin auto-configures MCP tools, hooks, and routing.
+
 ## Usage
 
 Open a terminal in this directory and run `claude`, then describe what you're after:
