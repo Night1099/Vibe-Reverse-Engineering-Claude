@@ -120,11 +120,20 @@ def format_status_line(resp: dict) -> str:
     pid = resp.get("pid", "?")
     state = resp.get("state", "UNKNOWN")
     bps = resp.get("bpCount", 0)
+    dxvk_tag = ""
+    dxvk = resp.get("dxvk")
+    if dxvk and dxvk.get("detected"):
+        if dxvk.get("isBridge"):
+            dxvk_tag = " | DXVK REMIX BRIDGE"
+        elif dxvk.get("isRemix"):
+            dxvk_tag = " | DXVK REMIX"
+        else:
+            dxvk_tag = " | DXVK"
     if state == "FROZEN":
         frozen_addr = resp.get("frozenAddr", "?")
-        return f"[attached: {target} (pid {pid}) | FROZEN @ {frozen_addr} | bps: {bps}]"
+        return f"[attached: {target} (pid {pid}) | FROZEN @ {frozen_addr} | bps: {bps}{dxvk_tag}]"
     if state == "RUNNING":
-        return f"[attached: {target} (pid {pid}) | RUNNING | bps: {bps}]"
+        return f"[attached: {target} (pid {pid}) | RUNNING | bps: {bps}{dxvk_tag}]"
     return "[not attached]"
 
 
@@ -451,3 +460,55 @@ def _unpack_all(raw: bytes, fmt: str, size: int) -> list:
     import struct as st
     return [st.unpack(fmt, raw[off : off + size])[0]
             for off in range(0, len(raw) - size + 1, size)]
+
+
+# ── DXVK Remix detection formatter ──────────────────────────────────────
+
+def format_dxvk_detect(resp: dict) -> str:
+    lines: list[str] = []
+    dxvk = resp.get("dxvk", {})
+    if not dxvk.get("detected"):
+        lines.append("No DXVK detected -- standard D3D9 rendering.")
+        return "\n".join(lines)
+
+    lines.append("=== DXVK DETECTED ===")
+    lines.append("")
+
+    d3d9 = dxvk.get("d3d9Module", {})
+    if d3d9:
+        lines.append(f"  d3d9.dll (DXVK):  {d3d9.get('path', '?')}")
+        lines.append(f"                    base={d3d9.get('base', '?')}  size={d3d9.get('size', '?')}")
+
+    indicators = dxvk.get("remixIndicators", [])
+    if indicators:
+        lines.append(f"  Remix modules:    {', '.join(indicators)}")
+
+    bridge = dxvk.get("bridgeProcess")
+    if bridge:
+        lines.append(f"  NvRemixBridge:    pid={bridge['pid']} ({bridge['name']})")
+
+    lines.append("")
+
+    if dxvk.get("isBridge"):
+        lines.append("  WARNING: DXVK Remix bridge architecture detected.")
+        lines.append("  This is a 32-bit game using a 64-bit rendering bridge.")
+        lines.append("")
+        lines.append("  Impact on livetools:")
+        lines.append("    - D3D9 hooks (dipcnt, vtable) hit bridge stubs, NOT real rendering")
+        lines.append("    - Stalker may crash on Vulkan/shader worker threads")
+        lines.append("    - 32-bit address space is constrained (trampoline failures)")
+        lines.append("")
+        lines.append("  Recommendations:")
+        lines.append(f"    - Attach to NvRemixBridge.exe (pid {bridge['pid']}) for rendering hooks")
+        lines.append("    - Game logic hooks (non-D3D9) work fine in this process")
+        lines.append("    - Avoid Stalker on threads that touch the Vulkan driver")
+        lines.append("    - Use 'trace' before 'steptrace' to minimize crash risk")
+    elif dxvk.get("isRemix"):
+        lines.append("  DXVK Remix detected (in-process, no bridge).")
+        lines.append("  D3D9 calls translate to Vulkan in this process.")
+        lines.append("  D3D9 vtable hooks will hit DXVK code, not system D3D9.")
+    else:
+        lines.append("  DXVK detected (upstream, non-Remix).")
+        lines.append("  D3D9 calls translate to Vulkan in-process.")
+
+    return "\n".join(lines)

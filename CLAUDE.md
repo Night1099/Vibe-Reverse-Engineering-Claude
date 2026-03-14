@@ -66,6 +66,9 @@ IMPORTANT: Collecting MORE INFORMATION per command run is encouraged over minor 
 | `disasm.py $B $VA` | Disassemble N instructions at VA | `disasm.py binary.exe 0x401000 -n 50` |
 | `decompiler.py $B $VA` | **Ghidra-quality C decompilation** (r2ghidra, auto-configured) | `python -m retools.decompiler binary.exe 0x401000` |
 | `decompiler.py $B $VA --types` | Decompile with knowledge base (structs, func sigs, globals) | `python -m retools.decompiler binary.exe 0x401000 --types patches/proj/kb.h` |
+| `decompiler.py $B $VA --backend llm4d` | **LLM4Decompile** via Ollama (AI decompilation) | `python -m retools.decompiler binary.exe 0x401000 --backend llm4d` |
+| `decompiler.py $B $VA --backend llm4d -m MODEL` | LLM4Decompile with specific quantization | `python -m retools.decompiler binary.exe 0x401000 --backend llm4d -m MHKetbi/llm4decompile-22b-v2:q8_0` |
+| `decompiler.py $B $VA --save PROJECT` | Save (asm, C) training pair for fine-tuning | `python -m retools.decompiler binary.exe 0x401000 --save mb_warband` |
 | `funcinfo.py $B $VA` | Find function start/end, rets, calling convention, callees | `funcinfo.py binary.exe 0x401000` |
 | `cfg.py $B $VA` | Control flow graph (basic blocks + edges, text or mermaid) | `cfg.py binary.exe 0x401000 --format mermaid` |
 | `callgraph.py $B $VA` | Caller/callee tree (multi-level, --up/--down N) | `callgraph.py binary.exe 0x401000 --up 3` |
@@ -122,12 +125,34 @@ python -m livetools status              # check connection
 | `dipcnt callers [N]` | Sample N DIP calls and histogram return addresses |
 | `memwatch start/stop/read` | Memory write watchpoint with backtrace |
 | `analyze $FILE` | Offline analysis of collected .jsonl trace data |
+| `dxvk` | Detect DXVK/Remix runtime, show hooking guidance |
 
 **NOTE**: Some processes require their window to be focused for traces to capture data.
 
+#### DXVK Remix Detection
+
+livetools **auto-detects** DXVK Remix on attach by scanning loaded modules for non-system `d3d9.dll` and checking for `NvRemixBridge.exe`. The status line shows `DXVK`, `DXVK REMIX`, or `DXVK REMIX BRIDGE` when detected. Run `python -m livetools dxvk` to re-check after attach.
+
+**When DXVK Remix Bridge is detected (32-bit games):**
+
+The game uses a split-process architecture. A 32-bit bridge `d3d9.dll` in the game directory serializes D3D9 calls over shared-memory IPC to a separate 64-bit `NvRemixBridge.exe` process that runs the Vulkan path-traced renderer.
+
+| What works | What doesn't |
+|-----------|-------------|
+| Game logic hooks (non-D3D9 functions) | `dipcnt` -- hits bridge stubs, not real draw calls |
+| `trace` / `bp` on game code | `steptrace` on Vulkan/shader threads (Stalker crash) |
+| `mem read/write` on game data | D3D9 vtable hooking (vtable points to DXVK internals) |
+| `modules` / `scan` | Trampoline allocation may fail (address space pressure) |
+
+**What to do:**
+- For **game logic** (physics, AI, input, camera): hook this process normally
+- For **rendering** (draw calls, shaders, textures): attach to `NvRemixBridge.exe` instead
+- Use `trace` before `steptrace` to minimize Stalker crash risk on DXVK threads
+- If trampoline allocation fails, try hooking at a different address or reduce concurrent hooks
+
 ### Decision Guide
 
-- "What does this function do?" → `decompiler.py` (best), then `disasm.py` + `cfg.py`
+- "What does this function do?" → `decompiler.py` (best), `decompiler.py --backend llm4d` (AI alternative), then `disasm.py` + `cfg.py`
 - "Decompile with named structs and functions" → `decompiler.py --types` (inline, stdin from `structrefs.py --aggregate`, or knowledge base file)
 - "Who calls this function?" → `xrefs.py` (flat) or `callgraph.py --up` (tree)
 - "What does this function call?" → `funcinfo.py` (list) or `callgraph.py --down` (tree)
@@ -149,6 +174,8 @@ python -m livetools status              # check connection
 - "What are the actual register values?" → `livetools trace --read` or `bp` + `regs`
 - "How many draw calls happen?" → `livetools dipcnt`
 - "Who writes to this memory address?" → `livetools memwatch`
+- "Is this game using DXVK Remix?" → `livetools dxvk` (auto-detected on attach)
+- "D3D9 hooks not working with RTX Remix" → attach to `NvRemixBridge.exe` for rendering hooks
 
 ### Tool Caveats
 

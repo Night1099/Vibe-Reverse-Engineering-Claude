@@ -37,6 +37,9 @@ Offline analysis:
 Scanning:
     python -m livetools scan <hex_pattern> [--range START:SIZE]
 
+DXVK Remix detection:
+    python -m livetools dxvk
+
 Memory watchpoint:
     python -m livetools memwatch start <addr> [--size N] [--max-hits N]
     python -m livetools memwatch read
@@ -116,6 +119,10 @@ def _spawn_daemon(target: str) -> None:
             resp = client.send_command({"cmd": "status"})
             print(client.format_status_line(resp))
             print(f"Attached to {target}.")
+            dxvk = resp.get("dxvk")
+            if dxvk and dxvk.get("detected"):
+                print()
+                print(client.format_dxvk_detect(resp))
             return
         time.sleep(0.3)
     print("[error] Daemon did not start within 15 seconds.", file=sys.stderr)
@@ -539,6 +546,16 @@ def cmd_vishook(args: argparse.Namespace) -> None:
         print("Usage: python -m livetools vishook [on|off|stats]")
 
 
+# ── DXVK detection command ────────────────────────────────────────────────
+
+def cmd_dxvk(args: argparse.Namespace) -> None:
+    if not _require_attached():
+        return
+    resp = client.send_command({"cmd": "dxvk_detect"})
+    print(client.format_status_line(resp))
+    print(client.format_dxvk_detect(resp))
+
+
 # ── NEW: memwatch command ─────────────────────────────────────────────────
 
 def cmd_memwatch(args: argparse.Namespace) -> None:
@@ -857,6 +874,18 @@ def build_parser() -> argparse.ArgumentParser:
     cal_p = dc_sub.add_parser("callers", help="Sample N DIP calls and show caller histogram")
     cal_p.add_argument("count", nargs="?", type=int, default=200, help="Number of calls to sample (default 200)")
 
+    # -- dxvk --
+    sub.add_parser("dxvk",
+        help="Detect DXVK / DXVK Remix runtime and show hooking guidance",
+        description=(
+            "Check if the target process uses DXVK or DXVK Remix for rendering.\n"
+            "Auto-detects bridge architecture (32-bit game + 64-bit NvRemixBridge.exe)\n"
+            "and prints warnings about D3D9 hook limitations.\n\n"
+            "Detection runs automatically on attach. Use this command to re-check\n"
+            "or if DXVK Remix was loaded after initial attach."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+
     # -- memwatch --
     sp = sub.add_parser("memwatch",
         help="Hardware memory write watchpoint (catch who writes to an address)",
@@ -972,6 +1001,7 @@ def main() -> None:
         "modules": cmd_modules,
         "vishook": cmd_vishook,
         "dipcnt": cmd_dipcnt,
+        "dxvk": cmd_dxvk,
         "memwatch": cmd_memwatch,
         "analyze": cmd_analyze,
     }

@@ -46,6 +46,8 @@ class Daemon:
 
         self._steptrace_event = threading.Event()
 
+        self.dxvk_info: dict | None = None
+
     # ── Frida setup ────────────────────────────────────────────────────────
 
     def attach(self) -> None:
@@ -75,6 +77,7 @@ class Daemon:
         self.script.on("message", self._on_message)
         self.script.load()
         self.api = self.script.exports_sync
+        self.dxvk_info = self._detect_dxvk()
 
     def _on_session_detached(self, reason: str, crash) -> None:
         print(f"[livetools daemon] target detached: {reason}", file=sys.stderr)
@@ -119,19 +122,68 @@ class Daemon:
         elif message.get("type") == "error":
             print(f"[agent error] {message.get('description', '?')}", file=sys.stderr)
 
+    # ── DXVK Remix detection ──────────────────────────────────────────────
+
+    def _detect_dxvk(self) -> dict:
+        """Check loaded modules for DXVK Remix bridge indicators."""
+        modules = self.api.enumerate_modules()
+        sys_dirs = ("\\system32\\", "\\syswow64\\")
+        d3d9_mod = None
+        remix_indicators = []
+        bridge_process = None
+
+        for m in modules:
+            name = m.get("name", "").lower()
+            path = m.get("path", "").lower()
+
+            if name == "d3d9.dll" and not any(sd in path for sd in sys_dirs):
+                d3d9_mod = m
+
+            if "remix" in name or "dxvk" in name:
+                remix_indicators.append(m.get("name", ""))
+
+            if "nvremix" in name:
+                remix_indicators.append(m.get("name", ""))
+
+        # Check for NvRemixBridge.exe as a sibling process
+        try:
+            dev = frida.get_local_device()
+            for proc in dev.enumerate_processes():
+                if proc.name.lower() == "nvremixbridge.exe":
+                    bridge_process = {"name": proc.name, "pid": proc.pid}
+                    break
+        except Exception:
+            pass
+
+        is_dxvk = d3d9_mod is not None
+        is_remix_bridge = bridge_process is not None
+        is_remix = is_dxvk and (bool(remix_indicators) or is_remix_bridge)
+
+        return {
+            "detected": is_dxvk,
+            "isRemix": is_remix,
+            "isBridge": is_remix_bridge,
+            "d3d9Module": d3d9_mod,
+            "remixIndicators": remix_indicators,
+            "bridgeProcess": bridge_process,
+        }
+
     # ── helpers ────────────────────────────────────────────────────────────
 
     def _base_resp(self) -> dict:
         bp_list = self.api.list_bps() if self.api else []
         is_frozen = self.api.is_frozen() if self.api else False
         frozen_addr = self.api.get_frozen_addr() if is_frozen else None
-        return {
+        resp = {
             "target": self.target_name,
             "pid": self.pid,
             "state": "FROZEN" if is_frozen else "RUNNING",
             "frozenAddr": frozen_addr,
             "bpCount": len(bp_list),
         }
+        if self.dxvk_info and self.dxvk_info.get("detected"):
+            resp["dxvk"] = self.dxvk_info
+        return resp
 
     def _resolve_output_path(self, filename: str) -> Path:
         exe = Path(self.target_name).stem
@@ -574,6 +626,12 @@ class Daemon:
             modules = [m for m in modules if filt in m["name"].lower()
                        or filt in m.get("path", "").lower()]
         return {**self._base_resp(), "ok": True, "modules": modules}
+
+    # ── DXVK detect command ──────────────────────────────────────────────
+
+    def _cmd_dxvk_detect(self, cmd: dict) -> dict:
+        self.dxvk_info = self._detect_dxvk()
+        return {**self._base_resp(), "ok": True, "dxvk": self.dxvk_info}
 
     # ── visibility override ────────────────────────────────────────────────
 
