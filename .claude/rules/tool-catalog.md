@@ -14,36 +14,48 @@ IMPORTANT: Collecting MORE INFORMATION per command run is encouraged over minor 
 
 ## Decision Guide
 
-- "What does this function do?" → `decompiler.py` (best), then `disasm.py` + `cfg.py`
-- "Decompile with named structs and functions" → `decompiler.py --types`
-- "Who calls this function?" → `xrefs.py` (flat) or `callgraph.py --up` (tree)
-- "What does this function call?" → `funcinfo.py` (list) or `callgraph.py --down` (tree)
-- "Where is this global read/written?" → `datarefs.py`
-- "Where is this string/pointer referenced?" → `datarefs.py --imm`
-- "Find a string and who uses it" → `search.py strings --xrefs`
-- "Where is struct field +0x54 used?" → `structrefs.py`
-- "What does this struct look like?" → `structrefs.py --aggregate`
-- "What C++ class is this vtable?" → `rtti.py vtable`
-- "What type was a caught/thrown exception?" → `rtti.py throwinfo`
-- "What DLL functions are exported?" → `search.py exports`
-- "Find all instructions using a specific constant" → `search.py insn`
-- "Find a mov-immediate near a struct field access" → `search.py insn --near`
-- "Find a known byte sequence" → `search.py pattern`
-- **"What crashed and what was the error message?"** → `dumpinfo.py diagnose --binary <dll>`
-- "What C++ exception type was thrown?" → `dumpinfo.py exception`
-- "Which module has frames on the crash stack?" → `dumpinfo.py stackscan <tid> --module <name>`
-- "Map all throw sites to error strings in a DLL" → `throwmap.py <dll> list`
-- "Match a specific dump against throw sites" → `throwmap.py <dll> match --dump <dmp>`
-- "Where is each thread stuck?" → `dumpinfo.py threads`
-- "Walk a crashing thread's call stack" → `dumpinfo.py stack <tid>`
-- "Is a specific string in the dump memory?" → `dumpinfo.py memscan <pattern>` or `strings --pattern`
-- "What memory regions are captured in the dump?" → `dumpinfo.py memmap`
+### Run Directly (main agent)
+
+These are fast (<5s) and allowed inline:
+
+- "What compiler built this?" → `python -m retools.sigdb fingerprint $B`
+- "Is this a known library function?" → `python -m retools.sigdb identify $B $VA`
+- "Get full context before reasoning about a function" → `python -m retools.context assemble $B $VA --project $P`
+- "Clean up decompiler output with known names" → pipe through `python -m retools.context postprocess`
+- "Read a typed value from the PE file" → `python -m retools.readmem $B $VA $TYPE`
+- "Build an ASI patch DLL" → `python -m retools.asi_patcher build spec.json`
+
+### Delegate to `static-analyzer` subagent
+
+Everything else. Tell the subagent WHAT you need, not HOW to run it — it has the full tool catalog.
+
+- "What does this function do?" → decompile + callgraph + xrefs
+- "Who calls this function?" → xrefs or callgraph --up
+- "What does this function call?" → callgraph --down
+- "Find a string and who uses it" → string search with xrefs
+- "Where is this global read/written?" → datarefs
+- "Where is struct field +0x54 used?" → structrefs
+- "What does this struct look like?" → structrefs --aggregate
+- "What C++ class is this vtable?" → RTTI resolution
+- "What type was a caught/thrown exception?" → RTTI throwinfo
+- "Find instructions using a specific constant" → instruction search
+- "What crashed and what was the error message?" → dump diagnosis + throwmap
+- "Map all throw sites to error strings" → throwmap list
+- "First time analyzing a binary?" → bootstrap (2-5 min)
+- "Bulk signature scan" → sigdb scan (1-3 min)
+- Any combination of the above
+
+### Live tools (main agent, requires attached process)
+
 - "Is this function reached at runtime?" → `livetools trace` or `collect`
 - "What are the actual register values?" → `livetools trace --read` or `bp` + `regs`
 - "How many draw calls happen?" → `livetools dipcnt`
 - "Who writes to this memory address?" → `livetools memwatch`
-- "What does the game's full render frame look like?" → `dx9tracer analyze --summary` + `--render-passes`
-- "What shaders and constants does the game use?" → `dx9tracer analyze --shader-map` + `--const-provenance`
+
+### dx9tracer (main agent for capture, delegate analysis)
+
+- "Trigger a frame capture" → main agent: `python -m graphics.directx.dx9.tracer trigger`
+- "Analyze captured frames" → delegate to `static-analyzer`: summary, render-passes, shader-map, etc.
 
 ## Static Analysis (`retools/`) -- offline, on-disk PE files
 
@@ -73,6 +85,13 @@ IMPORTANT: Collecting MORE INFORMATION per command run is encouraged over minor 
 | `search.py $B insn --near` | Find instructions near another pattern | `search.py binary.dll insn "mov *,0x10000" --near "cmp *,0x10000" --range 0x400` |
 | `readmem.py $B $VA $TYPE` | Read typed data (float, uint32, ptr, bytes...) | `readmem.py binary.exe 0x401000 float` |
 | `asi_patcher.py build` | Generate .asi DLL patch from JSON spec | `asi_patcher.py build spec.json --vcvarsall ...` |
+| `bootstrap.py $B --project $P` | Auto-seed KB: compiler ID, signatures, RTTI, imports, propagation | `bootstrap.py game.exe --project Warband` |
+| `sigdb.py scan $B` | Bulk signature scan against DB | `sigdb.py scan game.exe` |
+| `sigdb.py identify $B $VA` | Single function signature lookup (multi-tier) | `sigdb.py identify game.exe 0x401200` |
+| `sigdb.py fingerprint $B` | Identify compiler version (Rich header + markers + imports) | `sigdb.py fingerprint game.exe` |
+| `context.py assemble $B $VA --project $P` | Gather full analysis context for a function | `context.py assemble game.exe 0x401500 --project Warband` |
+| `context.py postprocess $B $VA --project $P` | Mechanically rename/annotate decompiler output (pipe) | `decompiler.py ... \| context.py postprocess ...` |
+| `sigdb.py build $MANIFEST` | Build/extend signature DB from manifest | `sigdb.py build sources.json` |
 
 ## Crash Dump Analysis
 
