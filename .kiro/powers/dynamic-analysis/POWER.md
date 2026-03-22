@@ -8,13 +8,11 @@ author: "workspace"
 
 # Dynamic Analysis with livetools
 
-For DX9 FFP proxy porting and RTX Remix compatibility, see also the `dx9-ffp-port` power.
+For DX9 FFP proxy porting and RTX Remix compatibility, see also: @dx9-ffp-port
 
-A live analysis toolkit for running processes. Attach, trace functions, collect data, inspect state, step through code, patch memory, analyze offline — composable tools that chain naturally for any RE scenario.
+A live analysis toolkit for running processes. Attach, trace functions, collect data, inspect state, step through code, patch memory, analyze offline -- composable tools that chain naturally for any RE scenario.
 
 All commands: `python -m livetools <command> [args]`
-
----
 
 ## Quick Reference
 
@@ -61,7 +59,7 @@ python -m livetools mem write <addr> <hex>    # write bytes to live memory
 python -m livetools scan <pattern> --range START:SIZE
 ```
 
-### Non-blocking Tracing
+### Non-blocking Tracing (NEW)
 ```
 python -m livetools trace <addr> [--count N] [--read SPEC] [--read-leave SPEC] [--filter EXPR] [--timeout T] [--output FILE]
 python -m livetools steptrace <addr> [--max-insn N] [--call-depth D] [--detail LEVEL] [--timeout T] [--output FILE]
@@ -106,7 +104,7 @@ eax!=0
 
 ## Command Details
 
-### trace — Non-blocking enter/leave function hook
+### trace -- Non-blocking enter/leave function hook
 
 Hooks a function's entry and exit **without freezing** the target. Reads specified data at each call, returns structured results.
 
@@ -131,9 +129,12 @@ Output format:
 #1  caller=00405ABC
   ENTER  ecx=10B457CC  [esp+4]:12:float32=[-622.44, -278.34, 50.00]
   LEAVE  eax=00000001  retval=00000001
+#2  caller=00405ABC
+  ENTER  ecx=10DE6A74  [esp+4]:12:float32=[-236.48, -322.13, 50.00]
+  LEAVE  eax=00000001  retval=00000001
 ```
 
-### steptrace — Instruction-level execution recording via Stalker
+### steptrace -- Instruction-level execution recording via Stalker
 
 Records every instruction executed from function entry through return. Uses Frida Stalker for real-time instruction tracing.
 
@@ -156,7 +157,7 @@ Detail levels:
 - **branches**: All instructions recorded, register snapshots at branches. Good default.
 - **blocks**: Only instruction addresses. Cheapest. Good for path mapping.
 
-### collect — Long-running multi-function data collection
+### collect -- Long-running multi-function data collection
 
 Streams data from one or more functions for a duration. Optionally partitions records into intervals via fence hooks.
 
@@ -179,28 +180,46 @@ The **fence** concept: Hook a boundary function (e.g. DX Present) that increment
 
 Output: JSONL in `patches/<exe_name>/traces/` by default (gitignored).
 
-### modules — List loaded DLLs
+### modules -- List loaded DLLs
 
 ```bash
 python -m livetools modules
+python -m livetools modules --filter kernel
 python -m livetools modules --filter kernel
 ```
 
 Returns name, base address, size, and full path for every loaded module. Essential for finding DLL bases for vtable hooks.
 
-### analyze — Offline JSONL aggregation (no Frida needed)
+### analyze -- Offline JSONL aggregation (no Frida needed)
 
 Pure Python. Reads JSONL from `collect` or `trace --output`. Deterministic, non-hallucinated aggregation.
 
 ```bash
+# Overview
 python -m livetools analyze trace.jsonl --summary
+
+# Which functions were called most?
 python -m livetools analyze trace.jsonl --group-by addr
+
+# What % of calls return each value?
 python -m livetools analyze trace.jsonl --filter "addr==00401000" --group-by "leave.eax"
+
+# Cross-tab: caller vs return value
 python -m livetools analyze trace.jsonl --filter "addr==00401000" --cross-tab caller leave.eax
+
+# Per-interval call counts
 python -m livetools analyze trace.jsonl --group-by interval --top 5
+
+# What happened in interval 47?
 python -m livetools analyze trace.jsonl --interval 47
+
+# Compare two intervals
 python -m livetools analyze trace.jsonl --compare-intervals 10 50
+
+# Float distribution histogram
 python -m livetools analyze trace.jsonl --filter "addr==00401000" --histogram "enter.reads.0.value.0"
+
+# Export for external tools
 python -m livetools analyze trace.jsonl --filter "addr==00401000" --export-csv output.csv
 ```
 
@@ -218,7 +237,7 @@ Field path syntax: dot-separated with array indices.
 Each line in a JSONL file is a self-contained JSON object:
 
 ```json
-{"ts": 1710000000000, "interval": 47, "addr": "0x00401000", "label": "FuncA", "caller": "00405ABC", "enter": {"regs": {"ecx": "10B457CC"}, "reads": [{"spec": "[esp+4]:12:float32", "value": [-622.44, -278.34, 50.00]}]}, "leave": {"eax": "00000001", "retval": "00000001", "reads": []}}
+{"ts": 1710000000000, "interval": 47, "addr": "0x00401000", "label": "FuncA", "caller": "00405ABC", "enter": {"regs": {"ecx": "10B457CC", ...}, "reads": [{"spec": "[esp+4]:12:float32", "value": [-622.44, -278.34, 50.00]}]}, "leave": {"eax": "00000001", "retval": "00000001", "reads": []}}
 ```
 
 ---
@@ -249,25 +268,34 @@ Disasm @ EIP:
   00401006  push  ebp
 ```
 
+Status line in every response:
+```
+[attached: target.exe (pid 1234) | FROZEN @ 00401000 | bps: 3]
+```
+
 ---
 
 ## Workflow Recipes
 
 ### Recipe 1: Quick function behavior check (trace)
 
-Non-blocking — target keeps running. See what arguments a function receives and what it returns.
+Non-blocking -- target keeps running. See what arguments a function receives and what it returns.
 
-```bash
+```
 python -m livetools trace 0x401000 --count 10 --read "ecx; [esp+4]:12:float32"
 ```
 
 ### Recipe 2: Understand a function's code path (steptrace)
 
-```bash
+Record the actual instructions executed through a single invocation:
+
+```
 python -m livetools steptrace 0x401000 --max-insn 500 --call-depth 1 --detail branches
 ```
 
 ### Recipe 3: Per-frame analysis (collect + fence + analyze)
+
+Collect data over many frames, then analyze offline:
 
 ```bash
 python -m livetools collect 0x401000 0x402000 \
@@ -282,15 +310,19 @@ python -m livetools analyze trace.jsonl --compare-intervals 10 50
 python -m livetools analyze trace.jsonl --histogram "enter.reads.0.value.0"
 ```
 
-### Recipe 4: Find DLL base for vtable hooks
+### Recipe 4: Verify a hook address is correct
 
-```bash
-python -m livetools modules --filter kernel
+Before hooking, confirm the address contains real code in the live process:
 ```
+python -m livetools modules --filter <game_name>
+python -m livetools disasm <target_addr> -n 5
+```
+
+If `disasm` shows garbage or errors, the address is wrong at runtime. For DLLs, rebase from `modules` output. For game .exe code, most x86 games load at preferred base — static addresses work directly.
 
 ### Recipe 5: Register inspection at a breakpoint
 
-```bash
+```
 python -m livetools bp add 0x401000
 python -m livetools watch --timeout 60
 python -m livetools resume
@@ -299,13 +331,13 @@ python -m livetools resume
 ### Recipe 6: Read struct fields from a register pointer
 
 After a snapshot shows ECX=008800A0 and you suspect a float at offset +0x54:
-```bash
+```
 python -m livetools mem read 0x008800F4 4 --as float32
 ```
 
 ### Recipe 7: Step through a function
 
-```bash
+```
 python -m livetools bp add <function_entry>
 python -m livetools watch --timeout 60
 python -m livetools step over
@@ -316,22 +348,34 @@ python -m livetools resume
 
 ### Recipe 8: Patch a byte and verify
 
-```bash
+```
 python -m livetools mem write 0x00401000 "B0 01 C3"
 python -m livetools disasm 0x00401000 -n 3
 ```
 
 ### Recipe 9: Multi-function data-driven investigation
 
+Collect raw data, then ask targeted questions offline:
+
 ```bash
+# 1. Collect
 python -m livetools collect 0x401000 0x402000 0x403000 \
   --duration 60 --fence 0x404000 --output scene.jsonl \
   --label 0x401000=FuncA --label 0x402000=FuncB --label 0x403000=FuncC
 
+# 2. Overview
 python -m livetools analyze scene.jsonl --summary
+
+# 3. Which function is called most?
 python -m livetools analyze scene.jsonl --group-by addr
+
+# 4. Return value distribution for FuncA
 python -m livetools analyze scene.jsonl --filter "addr==0x00401000" --group-by "leave.eax"
+
+# 5. Cross-tab: who calls FuncA and what result?
 python -m livetools analyze scene.jsonl --filter "addr==0x00401000" --cross-tab caller leave.eax
+
+# 6. Export for spreadsheet
 python -m livetools analyze scene.jsonl --export-csv scene.csv
 ```
 
@@ -351,6 +395,20 @@ python -m livetools analyze scene.jsonl --export-csv scene.csv
 
 6. **Cross-reference with static analysis.** Match live register values and call sites against static disassembly from `retools` to identify struct offsets, vtable slots, and data pointers.
 
-7. **Use modules to find DLL bases.** Before hooking a DLL function (e.g. D3D9 vtable), use `modules` to find the actual loaded base address.
+7. **Verify addresses before hooking.** Most 32-bit game .exe files load at their preferred base (no ASLR), so static addresses from `retools` work directly. For DLLs or ASLR binaries, run `modules --filter <name>` and rebase: `runtime_addr = runtime_base + (static_addr - preferred_base)`. When in doubt, `modules` is one command — run it.
 
 8. **Composable pipeline.** `trace` captures raw records. `collect` streams them to disk. `analyze` aggregates offline. Chain them for any investigation.
+
+9. **Hook the game's CALL instruction, not the DLL function.** To trace a D3D9 method (or any API call), find the `call [reg+offset]` or `call <addr>` instruction *in the game's code* via `xrefs.py` or `vtable.py calls`. Hook THAT address. Do NOT compute the target address inside d3d9.dll and hook there — the arguments are arranged at the caller, and the DLL entry point is shared across all callers.
+
+10. **Zero hits means something is wrong — diagnose, don't give up.** If trace/collect returns 0 samples: (a) Ask the user: is the game window focused and actively rendering? (b) Verify the address: `disasm <addr>` in livetools -- confirm real code exists there. (c) Try a known-hot address: `dipcnt callers 10` finds confirmed active call sites; trace one to prove the hook pipeline works. (d) Only after all three pass should you reconsider whether the original address is actually called during gameplay.
+
+---
+
+## Anti-Patterns
+
+**Do NOT chase the "real" device pointer.** When working with D3D9, do NOT: read a device pointer from a global, dereference its vtable, compute `d3d9.dll_base + slot_offset`, and hook that address. This hooks inside the DLL where arguments are not in the expected layout and proxy/wrapper DLLs break the vtable chain. Hook the game's CALL instruction instead (pattern #9).
+
+**Do NOT explain away zero data.** If a trace returns 0 samples, the answer is "I got no data and need to troubleshoot" — not "the game doesn't appear to use this code path." Follow the escalation in pattern #10.
+
+**Do NOT pass DLL-internal addresses to trace/bp.** Addresses from a DLL's export table or vtable layout belong to the DLL's code. Hooking them gives you the wrong context. Always prefer hooking in the game's own .text section.

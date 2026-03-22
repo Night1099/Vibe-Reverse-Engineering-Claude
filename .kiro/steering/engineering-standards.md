@@ -27,14 +27,14 @@ Every change should make the codebase better, not just make the problem go away.
 - **No legacy fallbacks**: if you replace a system, remove the old one.
 - **No dead code**: commented-out blocks, unused imports, orphan functions "just in case". Version control is the safety net.
 - **No multiple paths to the same result**: one way to do each thing. If two paths exist, one is wrong.
-- **No half-migrations**: finish the job — update every reference, remove old APIs.
+- **No half-migrations**: finish the job -- update every reference, remove old APIs.
 
 ## Smell Tests
 
-- "It works if I add a sleep" — broken data flow.
-- "It works if I read from widget instead of storage" — the two are out of sync.
-- "It passes alone but fails with other tests" — shared mutable state leaking.
-- "I added a flag to skip this code path" — why does that path run in the first place?
+- "It works if I add a sleep" -- broken data flow.
+- "It works if I read from widget instead of storage" -- the two are out of sync.
+- "It passes alone but fails with other tests" -- shared mutable state leaking.
+- "I added a flag to skip this code path" -- why does that path run in the first place?
 
 ## Code Comments
 
@@ -43,7 +43,7 @@ Each file reads as if it was always designed this way. Comments guide the next d
 ### Remove
 
 - **Implementation backstories**: "We do this because the other day X happened"
-- **Obvious narration**: "Create the attribute", "Loop through keys" — if the code says it, the comment is noise
+- **Obvious narration**: "Create the attribute", "Loop through keys", "Check if valid" -- if the code says it, the comment is noise
 - **Debugging breadcrumbs**: "Without this, subsequent tests may see the modifier key as still held"
 - **Trial-and-error reasoning**: "We tried X but it caused Y so we do Z instead"
 
