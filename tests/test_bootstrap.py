@@ -287,32 +287,6 @@ class TestBootstrapProjectDir:
 
 
 # ---------------------------------------------------------------------------
-# Pipeline steps
-# ---------------------------------------------------------------------------
-
-class TestPipelineSteps:
-    def test_detect_compiler_returns_dict(self, tmp_path):
-        from bootstrap import _detect_compiler
-        import pefile
-        pe_path = _make_minimal_pe(str(tmp_path))
-        b = MagicMock()
-        b.pe = pefile.PE(pe_path, fast_load=False)
-        result = _detect_compiler(b, db_path=None)
-        assert "compiler" in result
-        assert "confidence" in result
-
-    def test_propagate_labels_incremental_set(self):
-        """Verify propagation uses incremental set, not O(n^2) rebuild."""
-        from bootstrap import _propagate_labels
-        mock_b = MagicMock()
-        result = _propagate_labels(
-            b=mock_b, func_table=[], known_names={}, known_addresses=set(),
-            kb_entry_addresses=set(),
-        )
-        assert isinstance(result, list)
-
-
-# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 

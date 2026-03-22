@@ -24,19 +24,12 @@ import json
 import sqlite3
 import struct
 import sys
-import urllib.error
-import urllib.request
 import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import Binary
-
-DEFAULT_DB_PATH = Path(__file__).resolve().parent / "data" / "signatures.db"
-
-_HF_REPO_DEFAULT = "RTX-Remix/Vibe-Reverse-Engineering-Signature-DB"
-_HF_URL_TEMPLATE = "https://huggingface.co/{repo}/resolve/main/{path}"
 
 SCHEMA_VERSION = 1
 
@@ -444,8 +437,6 @@ class SignatureDB:
             return []
         code32 = code[:32]
 
-        # TODO: Full-table scan. Add prefix index on first non-wildcarded
-        # bytes when the database grows large enough to matter.
         cur = self._conn.execute(
             "SELECT name, pattern, mask, func_size, tail_crc, "
             "compiler, source, category FROM byte_sigs"
@@ -711,37 +702,6 @@ def _scan_for_pattern(data: bytes, pattern: bytes, mask: bytes) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Download helpers
-# ---------------------------------------------------------------------------
-
-def _download_file(url: str, dest: str) -> None:
-    """Download a file from *url* to *dest* with progress."""
-    dest_path = Path(dest)
-    dest_path.parent.mkdir(parents=True, exist_ok=True)
-    req = urllib.request.Request(url)
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        data = resp.read()
-    dest_path.write_bytes(data)
-    print(f"  {dest_path.name} ({len(data):,} bytes)")
-
-
-def _pull_sources(repo: str, dest_dir: str) -> None:
-    """Download source files listed in the HF repo's manifest.json."""
-    manifest_url = _HF_URL_TEMPLATE.format(repo=repo, path="manifest.json")
-    req = urllib.request.Request(manifest_url)
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        manifest = json.loads(resp.read())
-
-    for rel_path in manifest.get("sources", []):
-        url = _HF_URL_TEMPLATE.format(repo=repo, path=rel_path)
-        dest = Path(dest_dir) / rel_path.removeprefix("sources/")
-        try:
-            _download_file(url, str(dest))
-        except urllib.error.HTTPError as e:
-            print(f"  WARNING: {rel_path}: {e}", file=sys.stderr)
-
-
-# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -761,8 +721,7 @@ def main(argv: list[str] | None = None) -> None:
     # -- scan --------------------------------------------------------------
     s = sub.add_parser("scan", help="Scan a binary for known functions")
     s.add_argument("binary", help="PE binary path")
-    s.add_argument("-d", "--db", default=str(DEFAULT_DB_PATH),
-                   help="Signature DB path (default: %(default)s)")
+    s.add_argument("-d", "--db", required=True, help="Signature DB path")
     s.add_argument("--compiler", default="",
                    help="Preferred compiler hint")
 
@@ -770,8 +729,7 @@ def main(argv: list[str] | None = None) -> None:
     s = sub.add_parser("identify", help="Identify a single function")
     s.add_argument("binary", help="PE binary path")
     s.add_argument("va", help="Function virtual address (hex)")
-    s.add_argument("-d", "--db", default=str(DEFAULT_DB_PATH),
-                   help="Signature DB path (default: %(default)s)")
+    s.add_argument("-d", "--db", required=True, help="Signature DB path")
     s.add_argument("--compiler", default="",
                    help="Preferred compiler hint")
 
@@ -780,23 +738,8 @@ def main(argv: list[str] | None = None) -> None:
                        help="Detect compiler from binary metadata")
     s.add_argument("binary", help="PE binary path")
 
-    # -- pull ---------------------------------------------------------------
-    s = sub.add_parser("pull", help="Download signature DB from HuggingFace")
-    s.add_argument("--sources", action="store_true",
-                   help="Also download source CSVs/TOMLs")
-    s.add_argument("--repo", default=_HF_REPO_DEFAULT,
-                   help=f"HuggingFace dataset repo (default: {_HF_REPO_DEFAULT})")
-
     args = p.parse_args(argv)
 
-    try:
-        _dispatch(args)
-    except (FileNotFoundError, OSError) as e:
-        print(f"sigdb: {e}", file=sys.stderr)
-        sys.exit(1)
-
-
-def _dispatch(args: argparse.Namespace) -> None:
     if args.command == "build":
         with open(args.manifest) as f:
             manifest = json.load(f)
@@ -845,15 +788,6 @@ def _dispatch(args: argparse.Namespace) -> None:
         for ev in result["evidence"]:
             print(f"    - {ev}")
         db.close()
-
-    elif args.command == "pull":
-        data_dir = DEFAULT_DB_PATH.parent
-        db_url = _HF_URL_TEMPLATE.format(repo=args.repo, path="signatures.db")
-        print(f"Downloading from {args.repo}...")
-        _download_file(db_url, str(data_dir / "signatures.db"))
-        if args.sources:
-            _pull_sources(args.repo, str(data_dir / "sources"))
-        print("Done.")
 
 
 if __name__ == "__main__":

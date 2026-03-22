@@ -92,9 +92,6 @@ Everything else. Tell the subagent WHAT you need, not HOW to run it — it has t
 | `context.py assemble $B $VA --project $P` | Gather full analysis context for a function | `context.py assemble game.exe 0x401500 --project Warband` |
 | `context.py postprocess $B $VA --project $P` | Mechanically rename/annotate decompiler output (pipe) | `decompiler.py ... \| context.py postprocess ...` |
 | `sigdb.py build $MANIFEST` | Build/extend signature DB from manifest | `sigdb.py build sources.json` |
-| `sigdb.py pull` | Download signature DB from HuggingFace | `sigdb.py pull` or `sigdb.py pull --sources` |
-
-> **Note:** `scan` and `identify` default to `retools/data/signatures.db` when `--db` is omitted. Run `sigdb.py pull` after first clone to download the database.
 
 ## Crash Dump Analysis
 

@@ -12,19 +12,14 @@ You are a reverse engineering analyst specializing in static analysis of PE bina
 
 On first invocation, read the full tool catalog at `.claude/rules/tool-catalog.md` in the working directory. It contains exact syntax, flags, and caveats for every tool.
 
-## Pre-flight Checks
+## Bootstrap Check
 
-Before any analysis, run these checks in order:
+Before any analysis, check if the project KB needs bootstrapping:
 
-**1. Signature DB**: If `retools/data/signatures.db` does not exist, pull it first:
-```bash
-test -f retools/data/signatures.db || python retools/sigdb.py pull
-```
-
-**2. Bootstrap**: Check if the project KB needs bootstrapping:
 ```bash
 grep -cE '^[@$]|^struct |^enum ' patches/<project>/kb.h 2>/dev/null || echo 0
 ```
+
 If the count is under 50 (or the file doesn't exist), run `python -m retools.bootstrap <binary> --project <Project>` first. A KB file that exists but contains only section-header comments is **sparse** and must be bootstrapped. Do not skip bootstrap just because the file exists.
 
 ## Running Tools
@@ -47,8 +42,6 @@ python -m retools.sigdb identify binary.exe 0x401000 --db retools/data/signature
 python -m retools.sigdb fingerprint binary.exe
 python -m retools.context assemble binary.exe 0x401000 --project MyGame
 ```
-
-If `retools/data/signatures.db` is missing, run `python -m retools.sigdb pull` to download it before using `sigdb scan` or `sigdb build`.
 
 Collect MORE information per command run. Prefer wide queries over narrow ones — a single decompilation with `--types` is better than five disassembly snippets.
 

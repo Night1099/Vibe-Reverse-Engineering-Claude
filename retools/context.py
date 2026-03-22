@@ -214,13 +214,6 @@ def assemble(b: Binary, va: int, project_dir: str, db_path: str | None = None,
     except Exception:
         pass
 
-    # Shared disassembly for strings + globals sections
-    func_size = end_va - start or 0x2000
-    try:
-        func_insns = b.disasm(start, count=2000, max_bytes=func_size)
-    except Exception:
-        func_insns = []
-
     # -- Strings (best-effort, O(1) lookup via VA dict) --
     try:
         all_strings = find_strings(b, min_len=4)
@@ -230,6 +223,7 @@ def assemble(b: Binary, va: int, project_dir: str, db_path: str | None = None,
                 s.va: s.value for s in all_strings if s.va is not None
             }
             # Collect memory refs from function's instructions
+            func_insns = b.disasm(start, count=2000, max_bytes=end_va - start or 0x2000)
             found_strings: list[tuple[str, int]] = []
             for insn in func_insns:
                 for ref_va in b.abs_imm_refs(insn) + b.abs_mem_refs(insn):
@@ -248,19 +242,23 @@ def assemble(b: Binary, va: int, project_dir: str, db_path: str | None = None,
 
     # -- Globals (cross-ref KB globals with function memory refs) --
     if kb_globals:
-        found_globals: list[tuple[int, str]] = []
-        for insn in func_insns:
-            for ref_va in b.abs_mem_refs(insn) + b.abs_imm_refs(insn):
-                if ref_va in kb_globals:
-                    found_globals.append((ref_va, kb_globals[ref_va]))
-        if found_globals:
-            lines.append("[globals]")
-            seen_gvas: set[int] = set()
-            for gva, gname in found_globals:
-                if gva in seen_gvas:
-                    continue
-                seen_gvas.add(gva)
-                lines.append(f"  {gname} at 0x{gva:0{w}X}")
+        try:
+            func_insns = b.disasm(start, count=2000, max_bytes=end_va - start or 0x2000)
+            found_globals: list[tuple[int, str]] = []
+            for insn in func_insns:
+                for ref_va in b.abs_mem_refs(insn) + b.abs_imm_refs(insn):
+                    if ref_va in kb_globals:
+                        found_globals.append((ref_va, kb_globals[ref_va]))
+            if found_globals:
+                lines.append("[globals]")
+                seen_gvas: set[int] = set()
+                for gva, gname in found_globals:
+                    if gva in seen_gvas:
+                        continue
+                    seen_gvas.add(gva)
+                    lines.append(f"  {gname} at 0x{gva:0{w}X}")
+        except Exception:
+            pass
 
     # -- Sigdb structural match (best-effort) --
     if db_path:

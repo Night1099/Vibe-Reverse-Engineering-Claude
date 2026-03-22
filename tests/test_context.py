@@ -217,29 +217,3 @@ class TestAssemble:
         proj.mkdir()
         result = assemble(b, 0x401500, str(proj))
         assert "unknown function at 0x00401500" in result
-
-
-class TestAssembleSingleDisasm:
-    def test_disasm_called_once(self, tmp_path):
-        """assemble() should disassemble the function only once."""
-        from context import assemble
-        from search import StringRef
-
-        kb = tmp_path / "kb.h"
-        kb.write_text("$ 0x500000 int g_global\n")
-
-        mock_binary = MagicMock()
-        mock_binary.is_64 = False
-        mock_binary.disasm.return_value = []
-        mock_binary.abs_imm_refs.return_value = []
-        mock_binary.abs_mem_refs.return_value = []
-
-        fake_strings = [StringRef(va=0x500000, offset=0x1000, value="test_error")]
-
-        with patch("context.find_start", return_value=0x401000), \
-             patch("context.analyze", return_value=([], [], 0x401100)), \
-             patch("context.aggregate_struct", return_value=[]), \
-             patch("context.find_strings", return_value=fake_strings):
-            assemble(mock_binary, 0x401000, str(tmp_path))
-
-        assert mock_binary.disasm.call_count <= 1

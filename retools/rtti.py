@@ -217,6 +217,100 @@ def scan_all_rtti(pe: pefile.PE) -> list[RttiClass]:
 
 
 def cmd_vtable(pe: pefile.PE, args):
+    base = pe.OPTIONAL_HEADER.ImageBase
+    is_64 = pe.OPTIONAL_HEADER.Magic == 0x20B
+    vtable_rva = vtable_va - base
+
+    col_ref = _read_u32(pe, vtable_rva - 4)
+    if col_ref is None:
+        return None
+
+    col_rva = _to_rva(pe, col_ref, is_64)
+    if col_rva <= 0:
+        return None
+
+    expected_sig = 1 if is_64 else 0
+    sig = _read_u32(pe, col_rva)
+    if sig is None or sig != expected_sig:
+        return None
+
+    if is_64:
+        self_rva = _read_u32(pe, col_rva + 0x14)
+        if self_rva != col_rva:
+            return None
+
+    td_ref = _read_u32(pe, col_rva + 0x0C)
+    if td_ref is None:
+        return None
+    td_rva = _to_rva(pe, td_ref, is_64)
+
+    class_name = _resolve_td_name(pe, td_rva, is_64)
+    if class_name is None:
+        return None
+
+    hierarchy: list[str] = []
+    chd_ref = _read_u32(pe, col_rva + 0x10)
+    if chd_ref is not None and chd_ref != 0:
+        chd_rva = _to_rva(pe, chd_ref, is_64)
+        num_bases = _read_u32(pe, chd_rva + 0x08)
+        if num_bases is not None and 0 < num_bases <= MAX_BASES:
+            bca_ref = _read_u32(pe, chd_rva + 0x0C)
+            if bca_ref is not None:
+                bca_rva = _to_rva(pe, bca_ref, is_64)
+                for i in range(num_bases):
+                    bcd_ref = _read_u32(pe, bca_rva + i * 4)
+                    if bcd_ref is None:
+                        break
+                    bcd_rva = _to_rva(pe, bcd_ref, is_64)
+                    bcd_td_ref = _read_u32(pe, bcd_rva)
+                    if bcd_td_ref is None:
+                        break
+                    bcd_td_rva = _to_rva(pe, bcd_td_ref, is_64)
+                    base_name = _resolve_td_name(pe, bcd_td_rva, is_64)
+                    if base_name is None:
+                        break
+                    hierarchy.append(base_name)
+
+    return RttiClass(name=class_name, vtable_va=vtable_va, hierarchy=hierarchy)
+
+
+def scan_all_rtti(pe: pefile.PE) -> list[RttiClass]:
+    """Walk all readable PE sections looking for valid RTTI vtable references.
+
+    Returns a deduplicated list of RttiClass objects found in the binary.
+    """
+    base = pe.OPTIONAL_HEADER.ImageBase
+    is_64 = pe.OPTIONAL_HEADER.Magic == 0x20B
+    expected_sig = 1 if is_64 else 0
+
+    seen: dict[str, RttiClass] = {}
+    for section in pe.sections:
+        if not (section.Characteristics & 0x40000000):  # IMAGE_SCN_MEM_READ
+            continue
+        sec_rva = section.VirtualAddress
+        sec_size = section.SizeOfRawData
+        sec_off = section.PointerToRawData
+        data = pe.get_data(sec_rva, min(sec_size, section.Misc_VirtualSize))
+
+        for i in range(0, len(data) - 4, 4):
+            val = struct.unpack_from("<I", data, i)[0]
+            col_rva = _to_rva(pe, val, is_64)
+            if col_rva <= 0:
+                continue
+            col_sig = _read_u32(pe, col_rva)
+            if col_sig != expected_sig:
+                continue
+
+            # The 4-byte COL reference sits at vtable-4, so vtable VA is here + 4
+            vtable_va = base + sec_rva + i + 4
+            result = resolve_vtable(pe, vtable_va)
+            if result is not None and result.name not in seen:
+                seen[result.name] = result
+
+    return list(seen.values())
+
+
+def cmd_vtable(pe: pefile.PE, args):
     vtable_va = int(args.va, 16)
     result = resolve_vtable(pe, vtable_va)
     if result is None:

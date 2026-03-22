@@ -194,6 +194,49 @@ def aggregate_struct(b: Binary, fn_va: int, base_reg=None,
     return results
 
 
+def aggregate_struct(b: Binary, fn_va: int, base_reg=None,
+                     fn_size=0x2000) -> list[FieldAccess]:
+    """Reconstruct struct fields from all [base+disp] accesses in a function.
+
+    Args:
+        b: Loaded PE binary.
+        fn_va: Virtual address of the function to analyze.
+        base_reg: Optional base register filter (e.g. "esi").
+        fn_size: Maximum function size to scan.
+
+    Returns:
+        List of FieldAccess objects sorted by offset.
+    """
+    raw_fields: dict[int, dict] = defaultdict(
+        lambda: {"accesses": [], "types": set(), "size": 0})
+
+    for disp, va, base, acc, mn, ops, mem_size in scan_all_fields(
+            b, base_reg, fn_va, fn_size):
+        f = raw_fields[disp]
+        f["accesses"].append((va, acc))
+        f["types"].add(_infer_type(mn, mem_size, b.is_64))
+        f["size"] = max(f["size"], mem_size)
+
+    results: list[FieldAccess] = []
+    for offset in sorted(raw_fields):
+        f = raw_fields[offset]
+        type_name = sorted(f["types"])[0] if f["types"] else "uint32_t"
+        all_acc: set[str] = set()
+        for _, acc in f["accesses"]:
+            all_acc.update(acc)
+        acc_label = "rw" if {"r", "w"} <= all_acc else (
+            "w" if "w" in all_acc else "r")
+        refs = [va for va, _ in f["accesses"]]
+        results.append(FieldAccess(
+            offset=offset,
+            type_name=type_name,
+            size=f["size"],
+            access=acc_label,
+            refs=refs,
+        ))
+    return results
+
+
 def main():
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
