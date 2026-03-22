@@ -1,5 +1,23 @@
 # Vibe Reverse Engineering -- Claude Code Instructions
 
+## Delegation Rule
+
+**Never run static analysis tools directly.** Delegate to a `static-analyzer` subagent. Only exceptions — run these inline:
+- `sigdb.py identify` / `fingerprint` (single-function ID, <5s)
+- `context.py assemble` / `postprocess` (context gathering, <5s)
+- `readmem.py` (single typed read from PE, <5s)
+- `asi_patcher.py build` (build step, not analysis)
+
+If you're about to run a second retools command in the same turn, you should have delegated.
+
+---
+
+## Live Tools First
+
+The main agent owns `livetools` — always use them to verify static findings, pursue leads from subagents, and patch at runtime. When a subagent returns addresses or candidates, **immediately follow up with live tools** (trace, breakpoint, mem read/write) rather than spawning more static analysis. Static analysis finds clues; live tools confirm and act on them. **Don't wait idle for subagents** — use live tools to explore independently while static analysis runs in the background.
+
+---
+
 ## Engineering Standards
 
 Every change should make the codebase better, not just make the problem go away. If a solution needs a paragraph to justify why it's not a hack, it's a hack.
@@ -49,12 +67,6 @@ Each file reads as if it was always designed this way. Comments guide the next d
 - **Docstrings** on classes and public methods (Google style: `Args:`, `Returns:`, `Raises:`)
 - **Type hints** over comments about expected types
 - **Short inline comments** on the *why*, never the *what*
-
----
-
-## Live Tools First
-
-The main agent owns `livetools` — always use them to verify static findings, pursue leads from subagents, and patch at runtime. When a subagent returns addresses or candidates, **immediately follow up with live tools** (trace, breakpoint, mem read/write) rather than spawning more static analysis. Static analysis finds clues; live tools confirm and act on them. **Don't wait idle for subagents** — use live tools to explore independently while static analysis runs in the background.
 
 ---
 

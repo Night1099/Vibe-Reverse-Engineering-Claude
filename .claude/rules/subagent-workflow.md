@@ -6,6 +6,16 @@ description: Subagent delegation rules — when to spawn static-analyzer vs run 
 
 The main agent orchestrates and focuses on **live tools**, **dx9tracer capture**, **user interaction**, and **synthesis**. Heavy static analysis and web research are delegated to subagents so the user isn't blocked.
 
+## Bootstrap First — New Binaries
+
+When analyzing a binary for the first time (no existing or sparsely populated `patches/<project>/kb.h`), **always bootstrap before other static analysis**:
+
+1. Spawn a `static-analyzer` subagent to run `bootstrap.py <binary> --project <Name>` — this seeds `kb.h` with RTTI classes, CRT/library function IDs, compiler info, and propagated labels
+2. Any other static analysis subagents should run in parallel, but their decompilation output will be richer if bootstrap finishes first
+3. After bootstrap, all subsequent `decompiler.py` calls **must** use `--types patches/<project>/kb.h`
+
+**How to detect "needs bootstrap":** Check if `patches/<project>/kb.h` exists AND has real content (function signatures `@`, globals `$`, or struct definitions beyond section headers). An empty or stub KB with only comment headers counts as sparse — bootstrap it. Quick check: `grep -cE '^[@$]|^struct |^enum ' patches/<project>/kb.h` — if the count is under 50, bootstrap.
+
 ## Delegation Rules
 
 | Task | Where |
@@ -15,6 +25,12 @@ The main agent orchestrates and focuses on **live tools**, **dx9tracer capture**
 | Live tools (`livetools`: attach, trace, bp, memwatch, dipcnt, mem read/write) | Main agent — directly |
 | dx9tracer trigger/capture | Main agent — directly |
 | dx9tracer analyze (offline JSONL analysis) | `static-analyzer` subagent |
+| Bootstrap new binary (`bootstrap.py`) | `static-analyzer` subagent -- takes 2-5 min |
+| Bulk signature scan (`sigdb.py scan`) | `static-analyzer` subagent -- takes 1-3 min |
+| Signature DB build (`sigdb.py build`) | `static-analyzer` subagent -- takes 1-5 min |
+| Single function ID (`sigdb.py identify`, `fingerprint`) | Main agent -- fast (<5s) |
+| Context assembly (`context.py assemble`) | Main agent -- fast (<5s) |
+| Decompiler postprocess (`context.py postprocess`) | Main agent -- instant |
 | File editing, patch specs, builds | Main agent — directly |
 | KB updates from subagent findings | `static-analyzer` writes to `kb.h`; main agent may refine |
 
@@ -61,8 +77,25 @@ Multiple `static-analyzer` instances can run in parallel for independent questio
 1. Spawn `static-analyzer`: `dumpinfo.py diagnose`, `throwmap.py match`
 2. Tell the user: "Analyzing the crash dump. If you can reproduce the crash, launch the game and I'll attach to catch it live"
 
+**"Analyze game.exe for the first time"**
+1. Spawn `static-analyzer` in background: `bootstrap.py game.exe --project MyGame`
+2. Tell the user: "Bootstrapping the binary -- this will auto-identify RTTI classes, CRT functions, and propagated labels. Takes ~3 minutes."
+3. While bootstrap runs, use `sigdb.py fingerprint` (fast) to tell the user the compiler version
+4. When bootstrap returns, read the report and summarize coverage to the user
+5. All subsequent decompilations use `--types patches/MyGame/kb.h` with the seeded KB
+
+## Anti-Patterns
+
+**The Cascade Trap.** The main agent runs "one quick xref" -> sees an interesting caller -> decompiles it -> follows another xref -> now it's doing a full static analysis session while the user waits. If you catch yourself about to run a second retools command, stop and delegate everything to a subagent.
+
+**Duplicating subagent work.** After spawning a static-analyzer, don't also grep/search for the same thing yourself. Trust the subagent. Use the wait time for livetools or user interaction.
+
+**Silent waiting.** Spawning a subagent and then producing no output until it returns. Always talk to the user or do livetools work while subagents run.
+
 ## When NOT to Delegate
 
-- Quick single-command lookups where you already know exactly what to run and need the result immediately — run directly
+- Allowlisted fast commands (see CLAUDE.md Delegation Rule): `sigdb identify`, `sigdb fingerprint`, `context assemble`, `context postprocess`, `readmem.py`, `asi_patcher.py build`
 - Anything requiring a live attached process — always main agent
 - Iterative debugging loops where each step depends on the last live result — main agent
+
+Everything else in `retools.*` goes to a `static-analyzer` subagent. No exceptions.
