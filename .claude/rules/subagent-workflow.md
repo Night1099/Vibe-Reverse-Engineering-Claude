@@ -46,7 +46,7 @@ When both static and dynamic analysis are needed:
 3. While the subagent works, prepare livetools (attach, set up traces) or discuss the approach with the user
 4. Synthesize findings when the subagent returns
 
-Multiple `static-analyzer` instances can run in parallel for independent questions (e.g., decompiling two unrelated functions, analyzing different modules).
+Multiple `static-analyzer` instances can run in parallel for independent questions (e.g., decompiling two unrelated functions, analyzing different modules). When a subagent returns findings with multiple leads (e.g., "5 candidate functions found"), spawn parallel subagents to chase independent leads simultaneously — don't serialize them or try to analyze them yourself.
 
 ## Main Agent Responsibilities During Analysis
 
