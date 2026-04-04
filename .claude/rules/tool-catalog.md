@@ -26,6 +26,9 @@ These are fast (<5s) and allowed inline:
 - "What constant flows into this register?" → `python -m retools.dataflow $B $VA --constants`
 - "Trace where this value comes from" → `python -m retools.dataflow $B $VA --slice TARGET_VA:REG`
 - "Build an ASI patch DLL" → `python -m retools.asi_patcher build spec.json`
+- "What mitigations does this binary have?" → `python -m retools.mitigations $B`
+- "Scan directory of binaries for weak mitigations" → `python -m retools.mitigations $DIR --recursive`
+- "What dangerous APIs does this binary import?" → `python -m retools.vulnscan $B imports`
 
 ### Delegate to `static-analyzer` subagent
 
@@ -48,6 +51,9 @@ Everything else. Tell the subagent WHAT you need, not HOW to run it — it has t
 - "Map all throw sites to error strings" → throwmap list
 - "First time analyzing a binary?" → bootstrap (2-5 min) + pyghidra analyze (5-15 min) in parallel
 - "Bulk signature scan" → sigdb scan (1-3 min)
+- "Full vulnerability scan with disasm context" → vulnscan scan (call sites to dangerous APIs)
+- "Find all callers of memcpy/sprintf/etc." → vulnscan callers FUNC
+- "Batch triage fuzzer crashes" → crashtriage triage DIR
 - Any combination of the above
 
 ### Live tools (main agent, requires attached process)
@@ -104,6 +110,34 @@ Everything else. Tell the subagent WHAT you need, not HOW to run it — it has t
 | `sigdb.py pull` | Download signature DB from HuggingFace | `sigdb.py pull` or `sigdb.py pull --sources` |
 
 > **Note:** `scan` and `identify` default to `retools/data/signatures.db` when `--db` is omitted. Run `sigdb.py pull` after first clone to download the database.
+
+## Security Assessment (`retools/`) -- bounty hunting and vulnerability research
+
+### Mitigation Checker (`retools/mitigations.py`) -- PE exploit mitigation audit
+
+| Tool | Purpose | Example |
+|------|---------|---------|
+| `mitigations.py $B` | Check all mitigations (ASLR, DEP, CFG, /GS, SafeSEH, XFG, CET, etc.) | `mitigations.py AcroRd32.exe` |
+| `mitigations.py $B --json` | Machine-readable JSON output | `mitigations.py Acrobat.dll --json` |
+| `mitigations.py $DIR --recursive` | Scan directory of PE files, rank by weakest | `mitigations.py "C:/Program Files/Adobe/" --recursive` |
+
+### Vulnerability Scanner (`retools/vulnscan.py`) -- dangerous API call-site finder
+
+| Tool | Purpose | Example |
+|------|---------|---------|
+| `vulnscan.py $B scan` | Full scan: find all dangerous function call sites with disasm context | `vulnscan.py AcroRd32.exe scan` |
+| `vulnscan.py $B scan --risk high` | Filter to high-risk only (memcpy, strcpy, sprintf, etc.) | `vulnscan.py Acrobat.dll scan --risk high --limit 50` |
+| `vulnscan.py $B imports` | Quick check: list dangerous imports present | `vulnscan.py AcroRd32.exe imports` |
+| `vulnscan.py $B callers FUNC` | Find all call sites to a specific dangerous function | `vulnscan.py AcroRd32.exe callers memcpy` |
+
+### Crash Triage (`retools/crashtriage.py`) -- batch fuzzer crash processing
+
+| Tool | Purpose | Example |
+|------|---------|---------|
+| `crashtriage.py triage $DIR` | Batch triage: deduplicate, classify exploitability, rank | `crashtriage.py triage ./crashes --binary AcroRd32.exe` |
+| `crashtriage.py triage $DIR -o F` | Save report as JSON for later review | `crashtriage.py triage ./crashes -o results.json` |
+| `crashtriage.py watch $DIR` | Monitor for new crashes in real-time (fuzzer companion) | `crashtriage.py watch ./crashes --binary AcroRd32.exe --interval 5` |
+| `crashtriage.py report $F` | Re-display a saved JSON triage report | `crashtriage.py report results.json` |
 
 ## Crash Dump Analysis
 
