@@ -1,0 +1,45 @@
+# Vibe RE Harness — Default Configuration
+# See harness/config.py for all available options.
+
+models:
+  orchestrator:
+    provider: anthropic           # or: openai
+    model: claude-opus-4-6    # or: gpt-5
+    temperature: 0.3
+    max_tokens: 8192
+
+  worker:
+    provider: ollama
+    model: qwen3:30b-a3b          # MoE, 3B active params, fits 12GB VRAM
+    temperature: 0.1              # Low for better tool-call accuracy
+    max_tokens: 4096
+
+  fallback:
+    provider: anthropic
+    model: claude-sonnet-4-20250514
+    temperature: 0.2
+    max_tokens: 4096
+
+litellm:
+  port: 4000
+  fallback_models:
+    - ollama/qwen3:30b-a3b
+    - anthropic/claude-sonnet-4-20250514
+
+ollama:
+  host: http://localhost:11434
+  models_to_pull:
+    - qwen3:30b-a3b
+  context_length: 32768
+
+rag:
+  persist_dir: patches/archon-harness/.chromadb
+  embedding_model: all-MiniLM-L6-v2
+  chunk_size: 512
+  top_k: 5
+
+harness:
+  repo_root: .
+  max_worker_retries: 3
+  worker_timeout_sec: 120
+  mcp_port: 8080

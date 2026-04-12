@@ -1,0 +1,9 @@
+# Harness-specific dependencies (beyond repo requirements.txt)
+pydantic>=2.0
+pydantic-ai>=1.80
+litellm>=1.50
+chromadb>=0.5
+sentence-transformers>=3.0
+fastapi>=0.115
+uvicorn>=0.32
+pyyaml>=6.0
