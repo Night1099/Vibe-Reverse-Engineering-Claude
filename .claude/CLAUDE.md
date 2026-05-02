@@ -36,6 +36,19 @@ The main agent owns `livetools` — always use them to verify static findings, p
 
 ---
 
+## Cost Routing
+
+Subagents run on a cheap model (DeepSeek V4 Flash) via the `free-claude-code` proxy. The main agent runs on Opus and orchestrates only.
+
+**Hard rules:**
+- The main agent **never** spawns a subagent with `model: "opus"` or `model: "sonnet"`. Every Agent tool call must pass `model: "haiku"` — including built-in agents (`Explore`, `general-purpose`, `Plan`, `claude-code-guide`). The `haiku` label is what the proxy rewrites to V4 Flash; it does not mean "Claude Haiku."
+- No escape hatch. If a subagent returns a wrong or weak result, surface it to the user — do not retry on a stronger model.
+- The main agent does not silently redo subagent work on a smarter model. If Flash can't handle it, that's reported, not papered over.
+
+Setup for the proxy lives in `.claude/proxy-setup.md`.
+
+---
+
 ## Engineering Standards
 
 Every change should make the codebase better, not just make the problem go away. If a solution needs a paragraph to justify why it's not a hack, it's a hack.

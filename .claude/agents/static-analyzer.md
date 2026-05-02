@@ -2,7 +2,7 @@
 name: static-analyzer
 description: Offline PE binary analysis using retools. Delegate here for decompilation, disassembly, xrefs, string/pattern search, struct reconstruction, callgraphs, vtable/RTTI resolution, crash dump analysis, bootstrapping new binaries, signature DB operations, context assembly, and any static analysis task. Use instead of running retools commands in the main conversation.
 tools: Bash, Read, Write, Glob, Grep
-model: opus
+model: haiku
 memory: project
 ---
 
