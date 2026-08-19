@@ -2,13 +2,13 @@
 
 LLM-friendly static and dynamic analysis toolkit for x86/x64 PE binaries (`.exe` / `.dll`), combining static analysis (`retools`), dynamic analysis (`livetools` via Frida), and D3D9 frame tracing. Work is organized around per-game knowledge base files (`kb.h`) that accumulate discoveries and feed back into richer decompilation.
 
-This file is the canonical, harness-agnostic instruction set. Claude Code loads it via `.claude/CLAUDE.md`; Cursor, Copilot, Codex, and other agents read it directly. Deeper references live under `.claude/` and apply to every harness:
+This file is the canonical, harness-agnostic instruction set. Claude Code loads it via `.claude/CLAUDE.md`; Cursor, Copilot, Codex, DeepSeek Harness (`dsh`), and other agents read it directly. Deeper references live under `.claude/` and apply to every harness:
 
 - **Tool catalog** (every retools / livetools / dx9tracer command, syntax, caveats): `.claude/references/tool-catalog.md`
 - **Tool dispatch** (which tool for which question; what runs inline vs delegated): `.claude/rules/tool-dispatch.md`
 - **Analysis workflow** (bootstrap ordering, Ghidra backend, index/query, parallel patterns): `.claude/rules/subagent-workflow.md`
 - **Skills** (`dx9-ffp-port`, `dynamic-analysis`): `.claude/skills/` — canonical copies. Non-Claude harnesses self-install them (see "Skill Setup" below).
-- **Custom agents** (`static-analyzer`): `.claude/agents/` — canonical definitions. `.cursor/agents/`, `.github/agents/`, and `.kiro/agents/` hold thin harness-native mirrors that defer to the canonical files, so only the `.claude/agents/` copies get edited.
+- **Custom agents** (`static-analyzer`): `.claude/agents/` — canonical definitions. `.cursor/agents/`, `.github/agents/`, and `.kiro/agents/` hold thin harness-native mirrors that defer to the canonical files, so only the `.claude/agents/` copies get edited. DeepSeek Harness has no file-based project agents — see "DeepSeek Harness (dsh)" below for how it delegates.
 
 ## Skill Setup (do this first on non-Claude harnesses)
 
@@ -20,9 +20,18 @@ npx skills add ./.claude/skills -a <your-agent> -y   # e.g. -a cursor, -a copilo
 
 Omit `-a` to let the CLI auto-detect your harness. The source path must be `./.claude/skills` — a bare `.` finds nothing (the CLI skips the current project's agent directories).
 
-If `npx` is unavailable or your harness isn't supported by the CLI, copy manually: each `.claude/skills/<name>/` folder goes verbatim into your harness's skills directory (Cursor: `.cursor/skills/`, Copilot: `.github/skills/`, Kiro: `.kiro/skills/`, `.agents/skills/` for agents following that convention).
+If `npx` is unavailable or your harness isn't supported by the CLI, copy manually: each `.claude/skills/<name>/` folder goes verbatim into your harness's skills directory (Cursor: `.cursor/skills/`, Copilot: `.github/skills/`, Kiro: `.kiro/skills/`, and `.agents/skills/` for DeepSeek Harness and any other agent following that convention).
 
-Installed copies land in git-ignored paths (`.agents/`, `.cursor/skills/`, `.github/skills/`, `.kiro/skills/`, `skills-lock.json`) — never commit them, and never edit them: the canonical copies in `.claude/skills/` are the only ones that get edited. Re-install after pulling changes that touch `.claude/skills/`.
+Installed copies land in git-ignored paths (`.agents/`, `.cursor/skills/`, `.github/skills/`, `.kiro/skills/`, `.dsh/`, `skills-lock.json`) — never commit them, and never edit them: the canonical copies in `.claude/skills/` are the only ones that get edited. Re-install after pulling changes that touch `.claude/skills/`.
+
+## DeepSeek Harness (dsh)
+
+dsh reads this AGENTS.md natively — no pointer file exists for it. Follow everything above, with these dsh-specific adjustments:
+
+- **Skills**: dsh does not scan `.claude/skills/`. It discovers Agent Skills from `<repo>/.dsh/skills/` and `<repo>/.agents/skills/` (both git-ignored here). The manual copy IS the install: copy each `.claude/skills/<name>/` folder verbatim into `.agents/skills/<name>/`. The bundles already satisfy dsh's requirements (kebab-case names, `<name>/SKILL.md` layout), so no conversion is needed. Verify with dsh's skill search that `dx9-ffp-port` and `dynamic-analysis` resolve before starting work.
+- **static-analyzer delegation**: when the Working Method says to delegate to `static-analyzer`, spawn a subagent via dsh's delegation tool and instruct it to read `.claude/agents/static-analyzer.md` and follow everything below its frontmatter (setup, pre-flight checks, query-first workflow, findings format). If the `claude-code` subagent provider is enabled, prefer delegating to Claude Code — it picks up the agent definition natively.
+- **No delegation available**: if subagent tooling is disabled in your profile, run retools yourself but follow `.claude/rules/tool-dispatch.md` strictly — `index status` / `query` before fresh scans, batch related scans into one command, and keep slow scans out of the interactive loop.
+- **Live tools stay in the main loop**: `livetools` (attach, trace, breakpoints, memory patching) and dx9tracer capture are never delegated — the main agent owns the attached process.
 
 ## Read-Only Templates
 

@@ -11,6 +11,7 @@ No reverse engineering experience required -- just good prompting. Although some
   - [VSCode](https://code.visualstudio.com/) + [Copilot](https://github.com/features/copilot)
   - [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
   - [Kiro](https://kiro.dev)
+  - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 - Python 3.10+
 - Visual Studio 2022+ with C++ Desktop workload (only needed to build ASI patches)
 
@@ -50,7 +51,7 @@ python -m livetools gamectl --exe game.exe macro --macro-file patches/MyGame/mac
 
 Agent instructions are **single-sourced** — edit once, every harness picks it up:
 
-- **`AGENTS.md`** (repo root) — canonical instructions: project conventions, engineering standards, and pointers to the tool catalog. Read natively by Cursor, Kiro, Codex, and most agents. VS Code Copilot loads it via the shipped `.vscode/settings.json` (`chat.useAgentsMdFile`); Claude Code imports it from `.claude/CLAUDE.md`.
+- **`AGENTS.md`** (repo root) — canonical instructions: project conventions, engineering standards, and pointers to the tool catalog. Read natively by Cursor, Kiro, Codex, DeepSeek Harness, and most agents. VS Code Copilot loads it via the shipped `.vscode/settings.json` (`chat.useAgentsMdFile`); Claude Code imports it from `.claude/CLAUDE.md`.
 - **`.claude/`** — the maintained tree for everything deeper: skills (`.claude/skills/`), tool catalog (`.claude/references/`), workflow rules (`.claude/rules/`), and subagent definitions (`.claude/agents/`). These files are plain Markdown any agent can read by path.
 
 Skills install themselves: Claude Code reads `.claude/skills/` natively, and AGENTS.md instructs every other agent to install the skills into its own skills directory on first use (via the [skills CLI](https://github.com/vercel-labs/skills) or a manual copy). Normally you don't need to do anything — open the repo and start working.
@@ -65,7 +66,7 @@ npx skills add ./.claude/skills -a cursor -y     # or -a copilot, -a kiro-cli, .
 npx skills add Ekozmaster/Vibe-Reverse-Engineering
 ```
 
-Inside the repo, point the source at `./.claude/skills` explicitly — with a bare `.` the CLI skips the current project's own agent directories and finds nothing. Installed copies live in git-ignored locations (`.agents/`, `.cursor/skills/`, `skills-lock.json`, …); the canonical, editable copies stay in `.claude/skills/`.
+Inside the repo, point the source at `./.claude/skills` explicitly — with a bare `.` the CLI skips the current project's own agent directories and finds nothing. Installed copies live in git-ignored locations (`.agents/`, `.cursor/skills/`, `skills-lock.json`, …); the canonical, editable copies stay in `.claude/skills/`. DeepSeek Harness discovers `.agents/skills/` natively, so for it a manual copy of the skill folders into `.agents/skills/` is the whole install.
 
 ## Usage
 
